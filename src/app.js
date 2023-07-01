@@ -18,19 +18,55 @@ mongoClient
   .then(() => (db = mongoClient.db()))
   .catch(err => console.log(err.message))
 
-app.get('/', (req, res) => {
-  res.send('Ola, mundo')
-})
-
-app.get('/mensagem', (req, res) => {
-  db.collection('mensagem')
+app.get('/messages', (req, res) => {
+  db.collection('messages')
     .find()
     .toArray()
-    .then(mensagem => {
-      return res.send(mensagem)
+    .then(messages => {
+      res.send(messages)
     })
     .catch(err => {
-      return res.status(500).send(err.message)
+      res.status(500).send(err.message)
+    })
+})
+
+app.get('/participants', (req, res) => {
+  db.collection('participants')
+    .find()
+    .toArray()
+    .then(participants => {
+      res.send(participants)
+    })
+    .catch(err => {
+      res.status(500).send(err.message)
+    })
+})
+
+app.post('/participants', (req, res) => {
+  const { name } = req.body
+
+  const participant = { name }
+  db.collection('participants')
+    .insertOne(participant)
+    .then(() => {
+      return res.sendStatus(201)
+    })
+    .catch(err => {
+      res.status(500).send(err.message)
+    })
+})
+
+app.post('/messages', (req, res) => {
+  const { to, text, type } = req.body
+
+  const message = { to, text, type }
+  db.collection('messages')
+    .insertOne(message)
+    .then(() => {
+      return res.sendStatus(201)
+    })
+    .catch(err => {
+      res.status(500).send(err.message)
     })
 })
 
