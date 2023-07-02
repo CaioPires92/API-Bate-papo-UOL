@@ -20,11 +20,44 @@ mongoClient
   .then(() => (db = mongoClient.db()))
   .catch(err => console.log(err.message))
 
+// Função para remover participantes inativos e salvar mensagem de saída
+const removeInactiveParticipants = async () => {
+  try {
+    const threshold = Date.now() - 10000 // Tempo limite de inatividade (10 segundos atrás)
+    const inactiveParticipants = await db
+      .collection('participants')
+      .find({ lastStatus: { $lt: threshold } })
+      .toArray()
+
+    // Remover participantes inativos
+    await db
+      .collection('participants')
+      .deleteMany({ lastStatus: { $lt: threshold } })
+
+    // Salvar mensagem de saída para cada participante removido
+    inactiveParticipants.forEach(async participant => {
+      const message = {
+        from: participant.name,
+        to: 'Todos',
+        text: 'sai da sala...',
+        type: 'status',
+        time: dayjs().format('HH:mm:ss')
+      }
+
+      await db.collection('messages').insertOne(message)
+    })
+  } catch (err) {
+    console.error('Erro ao remover participantes inativos:', err)
+  }
+}
+
+// Executar a função de remoção a cada 15 segundos
+setInterval(removeInactiveParticipants, 15000)
+
 app.get('/messages', async (req, res) => {
   const user = req.headers.user
   const limit = req.query.limit ? parseInt(req.query.limit) : undefined
 
-  // Verificar se o parâmetro limit é um número válido
   if (limit !== undefined && (isNaN(limit) || limit <= 0)) {
     return res
       .status(422)
@@ -134,6 +167,32 @@ app.post('/messages', async (req, res) => {
 
     await db.collection('messages').insertOne(message)
     return res.sendStatus(201)
+  } catch (err) {
+    return res.status(500).send(err.message)
+  }
+})
+
+app.post('/status', async (req, res) => {
+  const user = req.headers.user
+
+  if (!user) {
+    return res.status(404).send()
+  }
+
+  try {
+    const participant = await db
+      .collection('participants')
+      .findOne({ name: user })
+
+    if (!participant) {
+      return res.status(404).send()
+    }
+
+    await db
+      .collection('participants')
+      .updateOne({ _id: participant._id }, { $set: { lastStatus: Date.now() } })
+
+    return res.sendStatus(200).send()
   } catch (err) {
     return res.status(500).send(err.message)
   }
