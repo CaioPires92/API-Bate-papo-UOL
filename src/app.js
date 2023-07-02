@@ -20,16 +20,33 @@ mongoClient
   .then(() => (db = mongoClient.db()))
   .catch(err => console.log(err.message))
 
-app.get('/messages', (req, res) => {
-  db.collection('messages')
-    .find()
-    .toArray()
-    .then(messages => {
-      res.send(messages)
-    })
-    .catch(err => {
-      res.status(500).send(err.message)
-    })
+app.get('/messages', async (req, res) => {
+  const user = req.headers.user
+  const limit = req.query.limit ? parseInt(req.query.limit) : undefined
+
+  // Verificar se o parâmetro limit é um número válido
+  if (limit !== undefined && (isNaN(limit) || limit <= 0)) {
+    return res
+      .status(422)
+      .send('O parâmetro limit deve ser um número válido e maior que zero.')
+  }
+
+  try {
+    let query = {
+      $or: [{ to: user }, { from: user }, { from: 'Todos' }]
+    }
+
+    let messagesQuery = db.collection('messages').find(query).sort({ _id: -1 })
+
+    if (limit) {
+      messagesQuery = messagesQuery.limit(limit)
+    }
+
+    const messages = await messagesQuery.toArray()
+    res.send(messages)
+  } catch (err) {
+    res.status(500).send(err.message)
+  }
 })
 
 app.get('/participants', (req, res) => {
@@ -95,7 +112,6 @@ app.post('/messages', async (req, res) => {
   }
 
   const messageSchema = Joi.object({
-    // from: Joi.string().required().min(1),
     to: Joi.string().required().min(1),
     text: Joi.string().required().min(1),
     type: Joi.string().valid('message', 'private_message').required()
