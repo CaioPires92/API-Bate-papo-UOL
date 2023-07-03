@@ -20,40 +20,6 @@ mongoClient
   .then(() => (db = mongoClient.db()))
   .catch(err => console.log(err.message))
 
-// Função para remover participantes inativos e salvar mensagem de saída
-const removeInactiveParticipants = async () => {
-  try {
-    const threshold = Date.now() - 10000 // Tempo limite de inatividade (10 segundos atrás)
-    const inactiveParticipants = await db
-      .collection('participants')
-      .find({ lastStatus: { $lt: threshold } })
-      .toArray()
-
-    // Remover participantes inativos
-    await db
-      .collection('participants')
-      .deleteMany({ lastStatus: { $lt: threshold } })
-
-    // Salvar mensagem de saída para cada participante removido
-    inactiveParticipants.forEach(async participant => {
-      const message = {
-        from: participant.name,
-        to: 'Todos',
-        text: 'sai da sala...',
-        type: 'status',
-        time: dayjs().format('HH:mm:ss')
-      }
-
-      await db.collection('messages').insertOne(message)
-    })
-  } catch (err) {
-    console.error('Erro ao remover participantes inativos:', err)
-  }
-}
-
-// Executar a função de remoção a cada 15 segundos
-setInterval(removeInactiveParticipants, 15000)
-
 app.get('/messages', async (req, res) => {
   const user = req.headers.user
   const limit = req.query.limit ? parseInt(req.query.limit) : undefined
@@ -94,41 +60,48 @@ app.get('/participants', (req, res) => {
     })
 })
 
-app.post('/participants', (req, res) => {
-  const { name } = req.body
+app.post('/participants', async (req, res) => {
+  try {
+    const { name } = req.body
 
-  const participantsSchema = Joi.object({
-    name: Joi.string().required().min(1)
-  })
+    const participantsSchema = Joi.object({
+      name: Joi.string().required().min(1)
+    })
 
-  const validation = participantsSchema.validate(req.body, {
-    abortEarly: false
-  })
+    const validation = participantsSchema.validate(req.body, {
+      abortEarly: false
+    })
 
-  if (validation.error) {
-    const errors = validation.error.details.map(detail => detail.message)
-    return res.status(422).send(errors)
-  } else {
-    db.collection('participants')
+    if (validation.error) {
+      const errors = validation.error.details.map(detail => detail.message)
+      return res.status(422).send(errors)
+    }
+
+    const existingParticipant = await db
+      .collection('participants')
       .findOne({ name })
-      .then(existingParticipant => {
-        if (existingParticipant) {
-          return res.sendStatus(409)
-        } else {
-          const participant = { name, lastStatus: Date.now() }
-          db.collection('participants')
-            .insertOne(participant)
-            .then(() => {
-              return res.sendStatus(201)
-            })
-            .catch(err => {
-              res.status(500).send(err.message)
-            })
-        }
-      })
-      .catch(err => {
-        res.sendStatus(500).send(err.message)
-      })
+
+    if (existingParticipant) {
+      return res.sendStatus(409)
+    }
+
+    const participant = { name, lastStatus: Date.now() }
+    await db.collection('participants').insertOne(participant)
+
+    // Salvar mensagem de entrada
+    const message = {
+      from: name,
+      to: 'Todos',
+      text: 'entrou na sala...',
+      type: 'status',
+      time: dayjs().format('HH:mm:ss')
+    }
+
+    await db.collection('messages').insertOne(message)
+
+    return res.sendStatus(201)
+  } catch (err) {
+    return res.status(500).send(err.message)
   }
 })
 
@@ -197,6 +170,40 @@ app.post('/status', async (req, res) => {
     return res.status(500).send(err.message)
   }
 })
+
+// Função para remover participantes inativos e salvar mensagem de saída
+const removeInactiveParticipants = async () => {
+  try {
+    const threshold = Date.now() - 10000 // Tempo limite de inatividade (10 segundos atrás)
+    const inactiveParticipants = await db
+      .collection('participants')
+      .find({ lastStatus: { $lt: threshold } })
+      .toArray()
+
+    // Remover participantes inativos
+    await db
+      .collection('participants')
+      .deleteMany({ lastStatus: { $lt: threshold } })
+
+    // Salvar mensagem de saída para cada participante removido
+    inactiveParticipants.forEach(async participant => {
+      const message = {
+        from: participant.name,
+        to: 'Todos',
+        text: 'sai da sala...',
+        type: 'status',
+        time: dayjs().format('HH:mm:ss')
+      }
+
+      await db.collection('messages').insertOne(message)
+    })
+  } catch (err) {
+    console.error('Erro ao remover participantes inativos:', err)
+  }
+}
+
+// Executar a função de remoção a cada 15 segundos
+setInterval(removeInactiveParticipants, 15000)
 
 app.listen(port, () => {
   console.log(`Servidor rodando na porta ${port}`)
