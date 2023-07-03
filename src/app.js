@@ -20,46 +20,6 @@ mongoClient
   .then(() => (db = mongoClient.db()))
   .catch(err => console.log(err.message))
 
-app.get('/messages', async (req, res) => {
-  const user = req.headers.user
-  const limit = req.query.limit ? parseInt(req.query.limit) : undefined
-
-  if (limit !== undefined && (isNaN(limit) || limit <= 0)) {
-    return res
-      .status(422)
-      .send('O parâmetro limit deve ser um número válido e maior que zero.')
-  }
-
-  try {
-    let query = {
-      $or: [{ to: user }, { from: user }, { from: 'Todos' }]
-    }
-
-    let messagesQuery = db.collection('messages').find(query).sort({ _id: -1 })
-
-    if (limit) {
-      messagesQuery = messagesQuery.limit(limit)
-    }
-
-    const messages = await messagesQuery.toArray()
-    res.send(messages)
-  } catch (err) {
-    res.status(500).send(err.message)
-  }
-})
-
-app.get('/participants', (req, res) => {
-  db.collection('participants')
-    .find()
-    .toArray()
-    .then(participants => {
-      res.send(participants)
-    })
-    .catch(err => {
-      res.status(500).send(err.message)
-    })
-})
-
 app.post('/participants', async (req, res) => {
   try {
     const { name } = req.body
@@ -92,7 +52,7 @@ app.post('/participants', async (req, res) => {
     const message = {
       from: name,
       to: 'Todos',
-      text: 'entrou na sala...',
+      text: 'entra na sala...',
       type: 'status',
       time: dayjs().format('HH:mm:ss')
     }
@@ -103,6 +63,18 @@ app.post('/participants', async (req, res) => {
   } catch (err) {
     return res.status(500).send(err.message)
   }
+})
+
+app.get('/participants', (req, res) => {
+  db.collection('participants')
+    .find()
+    .toArray()
+    .then(participants => {
+      res.send(participants)
+    })
+    .catch(err => {
+      res.status(500).send(err.message)
+    })
 })
 
 app.post('/messages', async (req, res) => {
@@ -143,6 +115,33 @@ app.post('/messages', async (req, res) => {
   } catch (err) {
     return res.status(500).send(err.message)
   }
+})
+
+app.get('/messages', async (req, res) => {
+  const { user } = req.headers
+  const { limit } = req.query
+
+  const messages = await db
+    .collection('messages')
+    .find({
+      $or: [{ from: user }, { to: user }, { to: 'Todos' }]
+    })
+    .toArray()
+
+  if (limit) {
+    const schemaLimit = Joi.number().min(1)
+    const { error } = schemaLimit.validate(limit)
+
+    if (error) {
+      res.status(422).send(error.message)
+      return
+    }
+
+    res.send(messages.slice(-limit))
+    return
+  }
+
+  res.send(messages)
 })
 
 app.post('/status', async (req, res) => {
